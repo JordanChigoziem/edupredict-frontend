@@ -34,7 +34,6 @@ const LEVEL_5 = [{ value: '1', label: 'Very Low' }, { value: '2', label: 'Low' }
 const QUALITY_5 = [{ value: '1', label: 'Very Poor' }, { value: '2', label: 'Poor' }, { value: '3', label: 'Fair' }, { value: '4', label: 'Good' }, { value: '5', label: 'Excellent' }];
 const YES_NO = [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }];
 
-// Factor weights for bar display based on feature importance
 function computeFactorBars(fields, result) {
   if (!result) return null;
   const attendance = parseFloat(fields.attendance) || 0;
@@ -143,12 +142,38 @@ export default function PredictPerformance({ showToast }) {
     }
     setLoading(true);
     try {
-      const absences = Math.max(0, Math.round((1 - parseFloat(attendance) / 100) * 30));
-      const studytime = parseFloat(studyHours) > 10 ? 4 : parseFloat(studyHours) > 5 ? 3 : parseFloat(studyHours) > 2 ? 2 : 1;
-      const g1g2 = fields.currentGrade ? parseFloat(fields.currentGrade) : Math.round((parseFloat(gpa) / 4.0) * 20);
+      // Parse all inputs
+      const studyHoursNum = parseFloat(studyHours) || 0;
+      const attendancePct = parseFloat(attendance) || 0;
+      const gpaNum = parseFloat(gpa) || 0;
+      const assignmentsPct = parseFloat(assignments) || 0;
+      const pastFailuresNum = parseFloat(fields.pastFailures) || 0;
+      const currentGradeNum = parseFloat(fields.currentGrade) || 0;
+
+      // Convert attendance % to absences (0-25 range)
+      const absences = Math.round(((100 - attendancePct) / 100) * 25);
+
+      // Map study hours to studytime (1-4 UCI scale)
+      const studytime = studyHoursNum < 2 ? 1 : studyHoursNum < 5 ? 2 : studyHoursNum < 10 ? 3 : 4;
+
+      // Compute realistic G1/G2
+      let g1g2;
+      if (currentGradeNum > 0) {
+        g1g2 = Math.max(0, Math.min(20, currentGradeNum));
+      } else {
+        const gradeFromGPA = (gpaNum / 4.0) * 20;
+        const attendanceBonus = (attendancePct / 100) * 20 * 0.3;
+        const assignmentBonus = (assignmentsPct / 100) * 20 * 0.2;
+        const baseGrade = (gradeFromGPA * 0.5) + attendanceBonus + assignmentBonus;
+        g1g2 = Math.max(0, Math.min(20, Math.round(baseGrade)));
+      }
+
+      // Infer failures from GPA if not provided
+      const failures = pastFailuresNum > 0 ? pastFailuresNum :
+        (gpaNum < 1.0 ? 3 : gpaNum < 1.5 ? 2 : gpaNum < 2.0 ? 1 : 0);
 
       const payload = {
-        school: 'GP',
+        school: fields.school || 'GP',
         sex: fields.gender === 'male' ? 'M' : 'F',
         address: fields.addressType === 'rural' ? 'R' : 'U',
         famsize: fields.familySize === 'small' ? 'LE3' : 'GT3',
@@ -164,13 +189,13 @@ export default function PredictPerformance({ showToast }) {
         age: parseFloat(fields.age) || 17,
         Medu: 2, Fedu: 2, traveltime: 1,
         studytime,
-        failures: parseFloat(fields.pastFailures) || 0,
+        failures,
         famrel: parseFloat(fields.familyRelationship) || 4,
         freetime: parseFloat(fields.freeTime) || 3,
         goout: parseFloat(fields.goingOut) || 2,
         Dalc: parseFloat(fields.workdayAlcohol) || 1,
         Walc: parseFloat(fields.weekendAlcohol) || 1,
-        health: parseFloat(fields.healthStatus) || 4,
+        health: parseFloat(fields.healthStatus) || (attendancePct > 80 ? 4 : attendancePct > 60 ? 3 : 2),
         absences,
         G1: g1g2,
         G2: g1g2,
@@ -252,9 +277,7 @@ export default function PredictPerformance({ showToast }) {
       </div>
 
       <div className="grid grid-cols-2 gap-6 mb-8">
-        {/* Form */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          {/* Step indicator */}
           <div className="flex items-center justify-between mb-6">
             {STEP_LABELS.map((label, i) => (
               <div key={i} className="flex items-center gap-2 flex-1">
@@ -289,9 +312,9 @@ export default function PredictPerformance({ showToast }) {
               <Field label="Assignments Submitted (%)"><NumberInput value={fields.assignments} onChange={set('assignments')} suffix="%" /></Field>
               <Field label="Number of Past Failures"><NumberInput value={fields.pastFailures} onChange={set('pastFailures')} /></Field>
               <Field label="Current Period Grade (if available)"><NumberInput value={fields.currentGrade} onChange={set('currentGrade')} suffix="/20" /></Field>
-              <Field label="Study Environment"><SelectInput value={fields.studyEnvironment} onChange={set('studyEnvironment')} options={[{value:'home',label:'Home'},{value:'library',label:'Library'},{value:'school',label:'School'},{value:'mixed',label:'Mixed'}]} /></Field>
-              <Field label="Preferred Learning Style"><SelectInput value={fields.learningStyle} onChange={set('learningStyle')} options={[{value:'visual',label:'Visual'},{value:'auditory',label:'Auditory'},{value:'reading',label:'Reading/Writing'},{value:'kinesthetic',label:'Kinesthetic'}]} /></Field>
-              <Field label="Academic Goal"><SelectInput value={fields.academicGoal} onChange={set('academicGoal')} options={[{value:'pass',label:'Pass the course'},{value:'distinction',label:'Get a distinction'},{value:'scholarship',label:'Win a scholarship'},{value:'career',label:'Career advancement'}]} /></Field>
+              <Field label="Study Environment"><SelectInput value={fields.studyEnvironment} onChange={set('studyEnvironment')} options={[{ value: 'home', label: 'Home' }, { value: 'library', label: 'Library' }, { value: 'school', label: 'School' }, { value: 'mixed', label: 'Mixed' }]} /></Field>
+              <Field label="Preferred Learning Style"><SelectInput value={fields.learningStyle} onChange={set('learningStyle')} options={[{ value: 'visual', label: 'Visual' }, { value: 'auditory', label: 'Auditory' }, { value: 'reading', label: 'Reading/Writing' }, { value: 'kinesthetic', label: 'Kinesthetic' }]} /></Field>
+              <Field label="Academic Goal"><SelectInput value={fields.academicGoal} onChange={set('academicGoal')} options={[{ value: 'pass', label: 'Pass the course' }, { value: 'distinction', label: 'Get a distinction' }, { value: 'scholarship', label: 'Win a scholarship' }, { value: 'career', label: 'Career advancement' }]} /></Field>
             </div>
           )}
 
@@ -320,13 +343,13 @@ export default function PredictPerformance({ showToast }) {
                 {fields.selectedStudent && <p className="text-xs text-indigo-500 mt-1">✓ Selected: {fields.selectedStudent}</p>}
               </div>
               <Field label="Age"><NumberInput value={fields.age} onChange={set('age')} /></Field>
-              <Field label="Gender"><SelectInput value={fields.gender} onChange={set('gender')} options={[{value:'male',label:'Male'},{value:'female',label:'Female'},{value:'other',label:'Other'},{value:'prefer_not',label:'Prefer not to say'}]} /></Field>
-              <Field label="Grade / Year Level"><SelectInput value={fields.gradeLevel} onChange={set('gradeLevel')} options={['7th Grade','8th Grade','9th Grade','10th Grade','11th Grade','12th Grade','Undergraduate','Postgraduate'].map(v=>({value:v,label:v}))} /></Field>
-              <Field label="School Type"><SelectInput value={fields.schoolType} onChange={set('schoolType')} options={[{value:'public',label:'Public'},{value:'private',label:'Private'},{value:'international',label:'International'},{value:'homeschool',label:'Homeschool'}]} /></Field>
-              <Field label="Guardian Type"><SelectInput value={fields.guardianType} onChange={set('guardianType')} options={[{value:'mother',label:'Mother'},{value:'father',label:'Father'},{value:'both',label:'Both Parents'},{value:'other',label:'Other'}]} /></Field>
-              <Field label="Parental Education"><SelectInput value={fields.parentalEducation} onChange={set('parentalEducation')} options={[{value:'none',label:'None'},{value:'primary',label:'Primary'},{value:'highschool',label:'High School'},{value:'undergraduate',label:'Undergraduate'},{value:'graduate',label:'Graduate'},{value:'postgraduate',label:'Postgraduate'}]} /></Field>
-              <Field label="Family Size"><SelectInput value={fields.familySize} onChange={set('familySize')} options={[{value:'small',label:'1–3 members'},{value:'medium',label:'4–6 members'},{value:'large',label:'7+ members'}]} /></Field>
-              <Field label="Home Address Type"><SelectInput value={fields.addressType} onChange={set('addressType')} options={[{value:'urban',label:'Urban'},{value:'rural',label:'Rural'},{value:'suburban',label:'Suburban'}]} /></Field>
+              <Field label="Gender"><SelectInput value={fields.gender} onChange={set('gender')} options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }, { value: 'prefer_not', label: 'Prefer not to say' }]} /></Field>
+              <Field label="Grade / Year Level"><SelectInput value={fields.gradeLevel} onChange={set('gradeLevel')} options={['7th Grade', '8th Grade', '9th Grade', '10th Grade', '11th Grade', '12th Grade', 'Undergraduate', 'Postgraduate'].map(v => ({ value: v, label: v }))} /></Field>
+              <Field label="School Type"><SelectInput value={fields.schoolType} onChange={set('schoolType')} options={[{ value: 'public', label: 'Public' }, { value: 'private', label: 'Private' }, { value: 'international', label: 'International' }, { value: 'homeschool', label: 'Homeschool' }]} /></Field>
+              <Field label="Guardian Type"><SelectInput value={fields.guardianType} onChange={set('guardianType')} options={[{ value: 'mother', label: 'Mother' }, { value: 'father', label: 'Father' }, { value: 'both', label: 'Both Parents' }, { value: 'other', label: 'Other' }]} /></Field>
+              <Field label="Parental Education"><SelectInput value={fields.parentalEducation} onChange={set('parentalEducation')} options={[{ value: 'none', label: 'None' }, { value: 'primary', label: 'Primary' }, { value: 'highschool', label: 'High School' }, { value: 'undergraduate', label: 'Undergraduate' }, { value: 'graduate', label: 'Graduate' }, { value: 'postgraduate', label: 'Postgraduate' }]} /></Field>
+              <Field label="Family Size"><SelectInput value={fields.familySize} onChange={set('familySize')} options={[{ value: 'small', label: '1–3 members' }, { value: 'medium', label: '4–6 members' }, { value: 'large', label: '7+ members' }]} /></Field>
+              <Field label="Home Address Type"><SelectInput value={fields.addressType} onChange={set('addressType')} options={[{ value: 'urban', label: 'Urban' }, { value: 'rural', label: 'Rural' }, { value: 'suburban', label: 'Suburban' }]} /></Field>
             </div>
           )}
 
@@ -375,7 +398,6 @@ export default function PredictPerformance({ showToast }) {
           )}
         </div>
 
-        {/* Result panel */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col">
           <h2 className="font-bold text-gray-800 mb-5">Prediction Result</h2>
           <div className="flex flex-col gap-6 flex-1">
@@ -414,7 +436,6 @@ export default function PredictPerformance({ showToast }) {
             <hr className="border-gray-100" />
 
             <div className="grid grid-cols-2 gap-6 flex-1">
-              {/* Key factors — now fills after prediction */}
               <div>
                 <h3 className="text-xs font-semibold text-gray-800 mb-4">Key Factors Affecting Performance</h3>
                 <div className="flex flex-col gap-4">
@@ -439,7 +460,6 @@ export default function PredictPerformance({ showToast }) {
                 </div>
               </div>
 
-              {/* Performance distribution — fills from real prediction history */}
               <div className="flex flex-col">
                 <h3 className="text-xs font-semibold text-gray-800 mb-4">Performance Distribution</h3>
                 <div className="flex items-center gap-4">
@@ -469,7 +489,6 @@ export default function PredictPerformance({ showToast }) {
         </div>
       </div>
 
-      {/* Recent Predictions */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-bold text-gray-800">Recent Predictions</h2>
@@ -494,7 +513,6 @@ export default function PredictPerformance({ showToast }) {
         </table>
       </div>
 
-      {/* View All Dialog */}
       {showAllPredictions && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-6">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-6 w-full max-w-4xl max-h-[80vh] flex flex-col">

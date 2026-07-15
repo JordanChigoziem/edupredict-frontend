@@ -29,30 +29,49 @@ export default function Dashboard({ showToast }) {
       return;
     }
 
+    const studyHoursNum = parseFloat(studyHours) || 0;
+    const attendancePct = parseFloat(attendance) || 0;
+    const gpaNum = parseFloat(gpa) || 0;
+    const assignmentsPct = parseFloat(assignments) || 0;
+
+    // Convert GPA (0-4) to G3 scale (0-20) directly
+    const gradeFromGPA = (gpaNum / 4.0) * 20;
+
+    // Convert attendance to absences: 100% attendance = 0 absences, 0% = 25 absences
+    const absences = Math.round(((100 - attendancePct) / 100) * 25);
+
+    // Map study hours to studytime (1-4 scale per UCI dataset)
+    const studytime = studyHoursNum < 2 ? 1 : studyHoursNum < 5 ? 2 : studyHoursNum < 10 ? 3 : 4;
+
+    // Map assignments % to a penalty on predicted grade
+    const assignmentFactor = assignmentsPct / 100;
+
+    // Compute realistic G1 and G2 based on all inputs combined
+    // This is the key fix — we blend GPA, attendance, and assignments
+    const baseGrade = (gradeFromGPA * 0.5) + (attendancePct / 100 * 20 * 0.3) + (assignmentFactor * 20 * 0.2);
+    const g1g2 = Math.max(0, Math.min(20, Math.round(baseGrade)));
+
+    // Map failures: if GPA is very low or attendance very low, infer failures
+    const failures = gpaNum < 1.0 ? 3 : gpaNum < 1.5 ? 2 : gpaNum < 2.0 ? 1 : 0;
+
     setLoading(true);
     try {
-      // Build a proper payload matching the model's expected features
-      const absences = Math.max(0, Math.round((1 - parseFloat(attendance) / 100) * 30));
-      const studytime = parseFloat(studyHours) > 10 ? 4 : parseFloat(studyHours) > 5 ? 3 : parseFloat(studyHours) > 2 ? 2 : 1;
-
       const res = await predict({
-        // Categorical features with sensible defaults
         school: 'GP', sex: 'F', address: 'U', famsize: 'GT3', Pstatus: 'T',
         Mjob: 'other', Fjob: 'other', reason: 'home', guardian: 'mother',
         schoolsup: 'no', famsup: 'yes', paid: 'no',
         activities: fields.extracurricular === 'yes' ? 'yes' : 'no',
         nursery: 'yes', higher: 'yes', internet: 'yes', romantic: 'no',
         subject: 'Math',
-        // Numeric features
         age: 17, Medu: 2, Fedu: 2, traveltime: 1,
         studytime,
-        failures: 0,
+        failures,
         famrel: 4, freetime: 3, goout: 2,
-        Dalc: 1, Walc: 1, health: 4,
+        Dalc: 1, Walc: 1,
+        health: attendancePct > 80 ? 4 : attendancePct > 60 ? 3 : 2,
         absences,
-        // Grade inputs — convert GPA (0-4) to G3 scale (0-20)
-        G1: Math.round((parseFloat(gpa) / 4.0) * 20),
-        G2: Math.round((parseFloat(gpa) / 4.0) * 20),
+        G1: g1g2,
+        G2: g1g2,
         selectedStudent: '',
         gradeLevel: '',
       });
@@ -100,7 +119,6 @@ export default function Dashboard({ showToast }) {
 
       <div className="grid grid-cols-2 gap-6 mb-6">
         <div className="flex flex-col gap-6">
-          {/* Quick predict form */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
             <div className="flex items-center gap-2 mb-1">
               <Sparkles size={20} className="text-indigo-600" />
@@ -112,7 +130,7 @@ export default function Dashboard({ showToast }) {
               <div>
                 <label className="text-sm text-gray-600 block mb-1.5">Study Hours per Week</label>
                 <div className="flex items-center border border-gray-200 rounded-lg px-3">
-                  <input type="number" placeholder="—" value={fields.studyHours} onChange={set('studyHours')}
+                  <input type="number" min="0" max="40" placeholder="e.g. 10" value={fields.studyHours} onChange={set('studyHours')}
                     className="flex-1 py-2.5 outline-none text-gray-700 text-sm" />
                   <span className="text-sm text-gray-400">hrs</span>
                 </div>
@@ -120,7 +138,7 @@ export default function Dashboard({ showToast }) {
               <div>
                 <label className="text-sm text-gray-600 block mb-1.5">Attendance (%)</label>
                 <div className="flex items-center border border-gray-200 rounded-lg px-3">
-                  <input type="number" placeholder="—" value={fields.attendance} onChange={set('attendance')}
+                  <input type="number" min="0" max="100" placeholder="e.g. 85" value={fields.attendance} onChange={set('attendance')}
                     className="flex-1 py-2.5 outline-none text-gray-700 text-sm" />
                   <span className="text-sm text-gray-400">%</span>
                 </div>
@@ -128,7 +146,7 @@ export default function Dashboard({ showToast }) {
               <div>
                 <label className="text-sm text-gray-600 block mb-1.5">Previous GPA</label>
                 <div className="flex items-center border border-gray-200 rounded-lg px-3">
-                  <input type="number" placeholder="—" value={fields.gpa} onChange={set('gpa')}
+                  <input type="number" min="0" max="4" step="0.1" placeholder="e.g. 2.5" value={fields.gpa} onChange={set('gpa')}
                     className="flex-1 py-2.5 outline-none text-gray-700 text-sm" />
                   <span className="text-sm text-gray-400">/4.0</span>
                 </div>
@@ -136,7 +154,7 @@ export default function Dashboard({ showToast }) {
               <div>
                 <label className="text-sm text-gray-600 block mb-1.5">Assignments Submitted (%)</label>
                 <div className="flex items-center border border-gray-200 rounded-lg px-3">
-                  <input type="number" placeholder="—" value={fields.assignments} onChange={set('assignments')}
+                  <input type="number" min="0" max="100" placeholder="e.g. 90" value={fields.assignments} onChange={set('assignments')}
                     className="flex-1 py-2.5 outline-none text-gray-700 text-sm" />
                   <span className="text-sm text-gray-400">%</span>
                 </div>
@@ -160,7 +178,6 @@ export default function Dashboard({ showToast }) {
             </button>
           </div>
 
-          {/* Tip banner */}
           <div className="bg-indigo-50 rounded-2xl p-5 flex items-center gap-4">
             <div className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center bg-indigo-300">
               <Lightbulb size={20} className="text-white" />
@@ -172,7 +189,6 @@ export default function Dashboard({ showToast }) {
           </div>
         </div>
 
-        {/* Prediction Result */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 h-full flex flex-col">
           <h2 className="font-bold text-gray-800 mb-5">Prediction Result</h2>
 
