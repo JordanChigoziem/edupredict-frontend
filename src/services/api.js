@@ -1,4 +1,4 @@
-const BASE_URL = 'https://edupredict-backend-production.up.railway.app/api';
+const BASE_URL = 'https://edupredict-backend-2lnr.onrender.com/api';
 
 function getToken() {
   return localStorage.getItem('edupredict_token');
