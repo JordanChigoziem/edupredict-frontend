@@ -27,6 +27,9 @@ export default function Models({ showToast }) {
   const [hidden, setHidden] = useState({});
   const [openMenu, setOpenMenu] = useState(null);
   const [showTrainModal, setShowTrainModal] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
+  const [trainProgress, setTrainProgress] = useState(0);
+  const [trainError, setTrainError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [trainForm, setTrainForm] = useState(EMPTY_TRAIN);
@@ -39,13 +42,33 @@ export default function Models({ showToast }) {
 
   const handleTrain = async () => {
     if (!trainForm.name.trim() || !trainForm.algorithm) { showToast('Please fill in model name and algorithm.'); return; }
+
+    setShowTrainModal(false);
+    setTrainError('');
+    setTrainProgress(0);
+    setIsTraining(true);
+
+    // Backend trains synchronously in one request and doesn't report real
+    // progress, so this climbs toward ~92% on a timer to show something is
+    // happening, then jumps to 100% the moment the real response lands.
+    const interval = setInterval(() => {
+      setTrainProgress((p) => (p < 92 ? p + (92 - p) * 0.06 + 0.3 : p));
+    }, 200);
+
     try {
       await trainModel({ name: trainForm.name.trim(), algorithm: trainForm.algorithm, dataset: trainForm.dataset });
+      clearInterval(interval);
+      setTrainProgress(100);
       await load();
-      setShowTrainModal(false);
-      setTrainForm(EMPTY_TRAIN);
-      showToast('Model training started successfully.');
-    } catch (err) { showToast(err.message || 'Failed to start training'); }
+      setTimeout(() => {
+        setIsTraining(false);
+        setTrainForm(EMPTY_TRAIN);
+        showToast('Model trained successfully.');
+      }, 600);
+    } catch (err) {
+      clearInterval(interval);
+      setTrainError(err.message || 'Failed to train model');
+    }
   };
 
   const handleEdit = async () => {
@@ -268,6 +291,50 @@ export default function Models({ showToast }) {
               <button onClick={handleTrain} className="flex-1 text-white font-semibold py-2.5 rounded-lg text-sm"
                 style={{ background: 'linear-gradient(to right, #6366F1, #A5B4FC)' }}>Start Training</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Training Progress Modal */}
+      {isTraining && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-6 w-full max-w-sm text-center">
+            {!trainError ? (
+              <>
+                <div className="w-14 h-14 rounded-full bg-indigo-50 flex items-center justify-center mb-4 mx-auto">
+                  <Activity size={26} className="text-indigo-500 animate-pulse" />
+                </div>
+                <h2 className="font-bold text-gray-800 mb-1">
+                  {trainProgress >= 100 ? 'Training Complete' : 'Training Model…'}
+                </h2>
+                <p className="text-xs text-gray-400 mb-5">
+                  {trainProgress >= 100
+                    ? 'Metrics have been calculated.'
+                    : `Fitting ${trainForm.algorithm || 'model'} on ${trainForm.dataset}. This can take a moment.`}
+                </p>
+                <div className="w-full bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden">
+                  <div
+                    className="h-2.5 rounded-full transition-all duration-200 ease-out"
+                    style={{ width: `${Math.min(trainProgress, 100)}%`, background: 'linear-gradient(to right, #6366F1, #A5B4FC)' }}
+                  />
+                </div>
+                <p className="text-xs font-semibold text-indigo-500">{Math.round(Math.min(trainProgress, 100))}%</p>
+              </>
+            ) : (
+              <>
+                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4 mx-auto">
+                  <X size={26} className="text-red-500" />
+                </div>
+                <h2 className="font-bold text-gray-800 mb-1">Training Failed</h2>
+                <p className="text-xs text-gray-500 mb-5">{trainError}</p>
+                <button
+                  onClick={() => { setIsTraining(false); setTrainError(''); }}
+                  className="w-full border border-gray-200 rounded-lg py-2.5 text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
