@@ -35,9 +35,9 @@ function Toggle({ on, onChange, disabled }) {
       onClick={disabled ? undefined : onChange}
       aria-pressed={on}
       disabled={disabled}
-      className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+      className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
       style={{ background: on && !disabled ? '#6366F1' : '#D1D5DB' }}>
-      <span className="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white transition-all"
+      <span className="absolute top-0.5 w-4.5 h-4.5 rounded-full bg-white transition-all"
         style={{ left: on && !disabled ? '20px' : '2px' }} />
     </button>
   );

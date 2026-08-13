@@ -11,7 +11,8 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import { getMe } from './services/api';
+import { getMe, getSettings } from './services/api';
+import { applyTheme } from './utils/theme';
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
@@ -20,6 +21,16 @@ function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [headerSearch, setHeaderSearch] = useState('');
   const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    getSettings()
+      .then((settings) => {
+        if (settings?.theme) {
+          applyTheme(settings.theme);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('edupredict_token');
